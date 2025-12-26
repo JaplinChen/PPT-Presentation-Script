@@ -7,11 +7,74 @@
 ## ✨ 功能特色
 
 - 🤖 **AI 智能生成**：使用 Google Gemini AI 生成自然流暢的演講文稿
+- 🎙️ **高品質 TTS**：整合 Microsoft Edge TTS，支援多種語音和語言
+- 📋 **自動備忘稿同步**：使用 PowerPoint COM 自動化同步備忘稿
 - 📝 **多種設定**：支援不同聽眾對象、語氣風格、情境設定
 - 🎯 **專業結構**：自動生成開場白、逐頁講稿、轉場語
+- 🎬 **自動播放設定**：自動配置音訊播放和投影片轉場
 - 💾 **便捷導出**：一鍵複製或下載 TXT 格式
 - 🎨 **精美介面**：現代化 UI 設計，支援響應式布局
-- 🔧 **模組化 Prompt**：可版本化的 Prompt 模板系統
+- 🔧 **模組化架構**：清晰的程式碼結構，易於維護和擴展
+
+## 📊 系統架構
+
+```mermaid
+graph TB
+    subgraph Frontend["前端層 (React + Vite)"]
+        UI[使用者介面]
+        Upload[檔案上傳]
+        Editor[文稿編輯器]
+        TTS[TTS 控制面板]
+    end
+    
+    subgraph Backend["後端層 (FastAPI)"]
+        API[API 端點]
+        PPTParser[PPT 解析器]
+        ScriptGen[文稿生成器]
+        TTSService[TTS 服務]
+        NotesSync[備忘稿同步]
+    end
+    
+    subgraph External["外部服務"]
+        Gemini[Google Gemini AI]
+        EdgeTTS[Microsoft Edge TTS]
+        PowerPoint[PowerPoint COM]
+    end
+    
+    UI --> API
+    Upload --> PPTParser
+    Editor --> ScriptGen
+    TTS --> TTSService
+    
+    ScriptGen --> Gemini
+    TTSService --> EdgeTTS
+    NotesSync --> PowerPoint
+    
+    style Frontend fill:#e3f2fd
+    style Backend fill:#fff3e0
+    style External fill:#f3e5f5
+```
+
+## 🔄 工作流程
+
+```mermaid
+flowchart LR
+    A[📄 上傳 PPT] --> B[🔍 解析投影片]
+    B --> C{選擇模式}
+    C -->|自動生成| D[🤖 AI 生成文稿]
+    C -->|手動輸入| E[✍️ 編輯文稿]
+    D --> F[📝 文稿編輯]
+    E --> F
+    F --> G[🎙️ 生成 TTS 音訊]
+    G --> H[🔗 嵌入音訊到 PPT]
+    H --> I[📋 同步備忘稿]
+    I --> J[✅ 下載有聲 PPT]
+    
+    style A fill:#bbdefb
+    style D fill:#c5e1a5
+    style G fill:#ffccbc
+    style J fill:#b2dfdb
+```
 
 ## 🏗️ 專案架構
 
