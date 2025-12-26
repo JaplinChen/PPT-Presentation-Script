@@ -1,0 +1,104 @@
+/* ScriptDisplay_split.css - 雙欄並排佈局樣式 */
+
+.split-view-container {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 2rem;
+    align-items: start;
+    height: 600px;
+    /* Fixed height for split view */
+    overflow: hidden;
+}
+
+.split-view-left {
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+.split-view-right {
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+.preview-sticky {
+    position: sticky;
+    top: 2rem;
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-sticky h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.preview-item-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.8rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s;
+    background-color: var(--bg-tertiary);
+    border: 1px solid transparent;
+}
+
+.preview-item-nav:hover {
+    background-color: var(--bg-primary);
+    border-color: var(--primary-color);
+    transform: translateX(4px);
+}
+
+.nav-badge {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 1rem;
+    min-width: 24px;
+    text-align: center;
+}
+
+.nav-title {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 響應式調整 */
+@media (max-width: 1024px) {
+    .split-view-container {
+        grid-template-columns: 250px 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .split-view-container {
+        grid-template-columns: 1fr;
+    }
+
+    .split-view-left {
+        display: none;
+        /* 小螢幕隱藏左側導航，改用原本的垂直滾動 */
+    }
+}

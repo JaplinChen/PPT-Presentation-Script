@@ -1,0 +1,101 @@
+{
+    "app": {
+        "title": "PPT プレゼンテーション台本作成ツール",
+        "subtitle": "AIがあなたのプレゼンをより説得力のあるものにします",
+        "footer": "© 2024 PPT Script Generator. All rights reserved."
+    },
+    "action": {
+        "edit": "編集",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "confirm": "確認"
+    },
+    "steps": {
+        "upload": "PPTアップロード",
+        "config": "設定",
+        "generateScript": "台本を生成",
+        "generateNarrated": "有声PPTを生成"
+    },
+    "upload": {
+        "dragDrop": "ここにPPTファイルをドラッグ＆ドロップしてください",
+        "selectFile": "ファイルを選択",
+        "supportFormat": ".pptx形式をサポート",
+        "analyzing": "PPTを分析中...",
+        "reupload": "ファイルを変更",
+        "success": "PPTのアップロードに成功しました",
+        "slideCount": "全 {{count}} 枚のスライド",
+        "titleCount": "• タイトルあり：{{count}} 枚",
+        "startAnalyze": "分析を開始"
+    },
+    "preview": {
+        "title": "PPT内容プレビュー",
+        "slidesNav": "スライドナビゲーション",
+        "noTitle": "（無題）",
+        "page": "第 {{page}} ページ"
+    },
+    "config": {
+        "title": "台本設定",
+        "audience": "ターゲット層",
+        "audiencePlaceholder": "入力または選択してください",
+        "purpose": "プレゼンの目的",
+        "purposePlaceholder": "例：製品紹介、進捗報告",
+        "context": "シチュエーション",
+        "tone": "トーン",
+        "duration": "予想時間（分）",
+        "transitions": "つなぎ言葉を含める",
+        "outputLanguage": "出力言語",
+        "generateBtn": "台本を生成",
+        "generating": "生成中..."
+    },
+    "options": {
+        "audience": {
+            "general": "一般",
+            "executives": "役員・経営陣",
+            "clients": "クライアント",
+            "techTeam": "技術チーム",
+            "investors": "投資家",
+            "partners": "パートナー",
+            "newEmployees": "新入社員",
+            "boardMembers": "取締役メンバー",
+            "salesTeam": "営業・マーケティング",
+            "crossDept": "他部署"
+        },
+        "context": {
+            "formalMeeting": "公式会議",
+            "internalSharing": "社内共有",
+            "clientProposal": "顧客提案",
+            "training": "研修・トレーニング",
+            "seminar": "セミナー"
+        },
+        "tone": {
+            "professional": "プロフェッショナルで自然",
+            "friendly": "親しみやすくフレンドリー",
+            "serious": "フォーマルで厳格",
+            "enthusiastic": "情熱的でエネルギッシュ"
+        }
+    },
+    "result": {
+        "title": "生成された台本",
+        "opening": "オープニング",
+        "slides": "スライド毎の台本",
+        "full": "全文",
+        "copy": "コピー",
+        "copied": "コピー完了",
+        "copyFull": "全文コピー",
+        "download": "ダウンロード",
+        "regenerate": "再生成",
+        "reset": "最初からやり直す"
+    },
+    "tts": {
+        "title": "音声設定",
+        "voice": "音声モデル",
+        "rate": "速度",
+        "pitch": "ピッチ",
+        "play": "音声を再生",
+        "download": "MP3をダウンロード",
+        "generating": "音声を生成中...",
+        "noVoice": "利用可能な音声がありません",
+        "preview": "プレビュー",
+        "language": "音声言語"
+    }
+}

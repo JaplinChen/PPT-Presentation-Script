@@ -1,0 +1,108 @@
+{
+    "app": {
+        "title": "PPT 演講文稿生成器",
+        "subtitle": "AI 賦能，讓您的簡報更具說服力",
+        "footer": "© 2024 PPT Script Generator. All rights reserved."
+    },
+    "action": {
+        "edit": "編輯",
+        "save": "儲存",
+        "cancel": "取消",
+        "confirm": "確認"
+    },
+    "steps": {
+        "upload": "上傳 PPT",
+        "config": "設定參數",
+        "generateScript": "生成文稿",
+        "generateNarrated": "生成有聲 PPT"
+    },
+    "upload": {
+        "dragDrop": "點擊或拖曳 PPT 檔案至此",
+        "selectFile": "選擇檔案",
+        "supportFormat": "支援 .pptx 格式",
+        "analyzing": "正在分析 PPT...",
+        "reupload": "更換檔案",
+        "success": "PPT 上傳成功",
+        "slideCount": "共 {{count}} 頁投影片",
+        "titleCount": "• {{count}} 頁有標題",
+        "startAnalyze": "開始解析"
+    },
+    "preview": {
+        "title": "PPT 內容預覽",
+        "slidesNav": "投影片導航",
+        "noTitle": "（無標題）",
+        "page": "第 {{page}} 頁"
+    },
+    "config": {
+        "title": "文稿設定",
+        "audience": "聽眾對象",
+        "audiencePlaceholder": "選擇或輸入聽眾對象",
+        "purpose": "簡報目的",
+        "purposePlaceholder": "例如：產品介紹、進度報告",
+        "context": "簡報情境",
+        "tone": "語氣風格",
+        "duration": "預計時長（分鐘）",
+        "transitions": "包含轉場語",
+        "outputLanguage": "輸出語言",
+        "generateBtn": "生成文稿",
+        "generating": "生成中..."
+    },
+    "options": {
+        "audience": {
+            "general": "一般",
+            "executives": "高階主管",
+            "clients": "客戶代表",
+            "techTeam": "技術團隊",
+            "investors": "投資人",
+            "partners": "合作夥伴",
+            "newEmployees": "新進員工",
+            "boardMembers": "董事會成員",
+            "salesTeam": "行銷業務團隊",
+            "crossDept": "跨部門同事"
+        },
+        "context": {
+            "formalMeeting": "正式會議",
+            "internalSharing": "內部分享",
+            "clientProposal": "客戶提案",
+            "training": "教育訓練",
+            "seminar": "研討會"
+        },
+        "tone": {
+            "professional": "專業自然",
+            "friendly": "輕鬆友善",
+            "serious": "正式嚴謹",
+            "enthusiastic": "熱情活潑"
+        }
+    },
+    "result": {
+        "title": "生成的演講文稿",
+        "opening": "開場白",
+        "slides": "逐頁講稿",
+        "full": "完整文稿",
+        "copy": "複製",
+        "copied": "已複製",
+        "copyFull": "複製全文",
+        "download": "下載文稿",
+        "downloadNarrated": "下載有聲 PPT (自動播放)",
+        "generatingNarrated": "正在製作有聲 PPT...",
+        "generatingWait": "這需要為每一張投影片生成語音，約需 1-2 分鐘。",
+        "generatingDoNotClose": "請勿關閉此視窗。",
+        "regenerate": "重新生成",
+        "reset": "重新開始"
+    },
+    "tts": {
+        "title": "語音設定",
+        "voice": "語音模型",
+        "rate": "語速",
+        "pitch": "音調",
+        "play": "播放音訊",
+        "download": "下載 MP3",
+        "generating": "正在生成音訊...",
+        "noVoice": "無可用語音",
+        "preview": "試聽",
+        "language": "語音語言"
+    },
+    "settings": {
+        "title": "LLM 設定"
+    }
+}

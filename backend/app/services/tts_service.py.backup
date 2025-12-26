@@ -1,0 +1,984 @@
+import asyncio
+import os
+import shutil
+import uuid
+import html
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+import edge_tts
+from mutagen.mp3 import MP3
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Cm, Inches
+
+class TTSService:
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    async def list_voices(self, language: str = None) -> List[Dict]:
+        """
+        List available voices, optionally filtered by language prefix (e.g., 'zh', 'en').
+        """
+        voices = await edge_tts.list_voices()
+        
+        # Filter and format
+        result = []
+        for v in voices:
+            # v is a dict with keys: Name, ShortName, Gender, Locale, SuggestedCodec
+            if language and not v['Locale'].startswith(language):
+                continue
+                
+            result.append({
+                "short_name": v['ShortName'],
+                "friendly_name": v['FriendlyName'], # Often looks like "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)"
+                "gender": v['Gender'],
+                "locale": v['Locale']
+            })
+            
+        return result
+
+    async def generate_audio(self, text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> Dict:
+        """
+        Generate audio file from text.
+        Returns info about the generated file.
+        """
+        if not text.strip():
+            raise ValueError("Text cannot be empty")
+
+        filename = f"{uuid.uuid4()}.mp3"
+        file_path = self.output_dir / filename
+        
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+        await communicate.save(str(file_path))
+        
+        return {
+            "filename": filename,
+            "path": str(file_path),
+            "url_path": f"/outputs/{filename}" # Relative URL for frontend
+        }
+
+    async def generate_segmented_audio(self, segments: List[Dict], voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> Dict:
+        """
+        Generate audio for each segment, concatenate them, and return timing info.
+        
+        Args:
+            segments: List of segment dicts with 'type' and 'text' keys
+            voice, rate, pitch: TTS settings
+            
+        Returns:
+            {
+                "combined_path": str,
+                "combined_filename": str,
+                "url_path": str,
+                "timings": [{ "segment_index": 0, "start_time": 0.0, "duration": 3.5 }, ...]
+            }
+        """
+        from pydub import AudioSegment
+        import re
+        
+        if not segments:
+            raise ValueError("Segments list cannot be empty")
+        
+        segment_files = []
+        timings = []
+        current_time = 0.0
+        
+        # Generate audio for each segment
+        for i, seg in enumerate(segments):
+            text = seg.get('text', '')
+            if not text.strip():
+                continue
+            
+            # Clean text from unwanted symbols
+            clean_text = re.sub(r'[*()[\]/]', ' ', text)
+            
+            try:
+                audio_info = await self.generate_audio(clean_text, voice, rate, pitch)
+                audio_path = audio_info['path']
+                
+                # Get duration
+                audio = MP3(audio_path)
+                duration = audio.info.length
+                
+                segment_files.append(audio_path)
+                timings.append({
+                    "segment_index": i,
+                    "type": seg.get('type', 'content'),
+                    "bullet_index": seg.get('bullet_index'),
+                    "start_time": current_time,
+                    "duration": duration,
+                    "text": text
+                })
+                
+                current_time += duration
+                
+            except Exception as e:
+                print(f"Warning: Failed to generate audio for segment {i}: {e}")
+                continue
+        
+        if not segment_files:
+            raise ValueError("No audio segments were generated")
+        
+        # Concatenate audio segments with small gaps for natural flow
+        gap = AudioSegment.silent(duration=300) # 0.3s gap
+        combined = AudioSegment.empty()
+        
+        # Recalculate timings with gaps
+        current_time = 0.0
+        final_timings = []
+        
+        for i, path in enumerate(segment_files):
+            audio_segment = AudioSegment.from_mp3(path)
+            
+            # Update timing for this segment
+            # Find the original timing entry to preserve metadata
+            orig_t = next((t for t in timings if t['segment_index'] == i), None)
+            if orig_t:
+                orig_t['start_time'] = current_time
+                final_timings.append(orig_t)
+            
+            combined += audio_segment
+            current_time += audio_segment.duration_seconds
+            
+            # Add gap between segments (except the last one)
+            if i < len(segment_files) - 1:
+                combined += gap
+                current_time += 0.3
+        
+        # Add 2.0s silence at the end to prevent PowerPoint from truncating last words
+        end_silence = AudioSegment.silent(duration=2000)
+        combined += end_silence
+        
+        # Save combined audio
+        combined_filename = f"combined_{uuid.uuid4()}.mp3"
+        combined_path = self.output_dir / combined_filename
+        combined.export(str(combined_path), format="mp3")
+        
+        actual_total_duration = combined.duration_seconds
+        
+        # Optionally clean up individual segment files
+        for path in segment_files:
+            try:
+                Path(path).unlink()
+            except:
+                pass
+        
+
+    async def generate_narrated_pptx(
+        self,
+        original_pptx_path: str,
+        slide_scripts: List[Dict],
+        voice: str,
+        rate: str = "+0%",
+        pitch: str = "+0Hz",
+        progress_callback: Optional[callable] = None,
+    ) -> Dict:
+        """
+        Generates a new PPTX with embedded audio and slide notes.
+        Simplified version - removed text polishing and animations.
+        """
+        if os.name != "nt":
+            raise RuntimeError("Narrated PPT generation currently requires Windows with PowerPoint installed.")
+
+        try:
+            import win32com.client  # noqa: F401
+        except ImportError:
+            raise RuntimeError("pywin32 is required for narrated PPT generation on Windows.")
+
+        from pptx.util import Pt
+        from pptx.dml.color import RGBColor
+        from pptx.enum.shapes import MSO_SHAPE
+        
+        # 1. Create a copy of the PPTX to work on
+        original_path = Path(original_pptx_path)
+        output_filename = f"narrated_{uuid.uuid4()}.pptx"
+        output_path = self.output_dir / output_filename
+        shutil.copy(original_path, output_path)
+        
+        prs = Presentation(output_path)
+        
+        # Map slide index to script data
+        script_data_map = {int(item['slide_no']): item for item in slide_scripts}
+        
+        # Collect script text for COM notes synchronization
+        all_slide_scripts: Dict[int, str] = {}
+        
+        # 2. Process each slide - add audio and collect scripts
+        visible_slide_index = 0
+        total_slides = len(prs.slides)
+        
+        for i, slide in enumerate(prs.slides):
+            # Skip hidden slides
+            if slide.element.get('show') == '0' or slide.element.get('show') == 'false':
+                continue
+                
+            ppt_slide_no = i + 1  # PowerPoint 的實際頁碼 (包含隱藏頁)
+            visible_slide_index += 1
+            
+            if progress_callback:
+                progress_callback(int((visible_slide_index / total_slides) * 80), f"Processing slide {visible_slide_index}/{total_slides}...")
+
+            slide_data = script_data_map.get(visible_slide_index, {})
+            segments = slide_data.get('segments', []) if isinstance(slide_data, dict) else []
+            script_text = slide_data.get('script', '') if isinstance(slide_data, dict) else ""
+
+            if not segments and not script_text:
+                # 保證至少有備忘稿內容，避免前端/COM 時間軸空值
+                script_text = "(此頁未產生稿，請在前端補稿或重試生成)"
+
+            # --- Robust Notes Synchronization (Stage 1: python-pptx) ---
+            try:
+                full_note_text = script_text
+                if not full_note_text and segments:
+                    full_note_text = "\n".join([str(seg.get('text') or seg.get('content') or "") for seg in segments])
+                
+                if full_note_text:
+                    self._ensure_notes_text(slide, full_note_text)
+                    print(f"DEBUG PPT: Slide {i+1} (Visible {visible_slide_index}) notes synchronized (pptx).")
+            except Exception as ne:
+                print(f"DEBUG PPT: Failed to update notes (pptx) for slide {i+1}: {ne}")
+            
+            # Ensure we have something for COM even if narration is skipped
+            all_slide_timings[ppt_slide_no] = {
+                "timings": [],
+                "script": script_text or ""
+            }
+
+            # Skip if no content to narrate (but we still keep the note-only entry above)
+            if not script_text and not segments:
+                print(f"DEBUG PPT: Slide {i+1} - No script or segments, skipping narration")
+                continue
+            
+            try:
+                import re
+                
+                print(f"DEBUG PPT: Slide {i+1} - segments count: {len(segments)}, script length: {len(script_text)}")
+                
+                # Determine if we should use segmented mode
+                if segments and len(segments) > 0:
+                    # SEGMENTED MODE: Generate audio per segment with timings
+                    print(f"DEBUG PPT: Using SEGMENTED mode for slide {i+1}")
+                    audio_result = await self.generate_segmented_audio(segments, voice, rate, pitch)
+                    audio_path = audio_result['combined_path']
+                    duration_sec = audio_result['total_duration']
+                    timings = audio_result['timings']
+                    
+                    # Store detailed timings for COM-based animation
+                    all_slide_timings[ppt_slide_no]["timings"] = timings
+                    
+                else:
+                    # LEGACY MODE: Generate single audio for whole script
+                    print(f"DEBUG PPT: Using LEGACY mode for slide {i+1}")
+                    clean_text = re.sub(r'[*()[\]/]', ' ', script_text)
+                    
+                    if not clean_text.strip():
+                        print(f"DEBUG PPT: Slide {i+1} - Empty clean text, skipping narration")
+                        continue
+                    
+                    audio_info = await self.generate_audio(clean_text, voice, rate, pitch)
+                    audio_path = audio_info['path']
+                    print(f"DEBUG PPT: Legacy audio generated: {audio_path}")
+                    
+                    audio = MP3(audio_path)
+                    duration_sec = audio.info.length
+                    all_slide_timings[ppt_slide_no]["timings"] = [{
+                        "segment_index": 0,
+                        "type": "content",
+                        "bullet_index": None,
+                        "start_time": 0.0,
+                        "duration": duration_sec,
+                        "text": clean_text
+                    }]
+                
+                # Position & Size (50% reduction per user request)
+                icon_width = Cm(0.5)
+                icon_height = Cm(0.5)
+                left_pos = Cm(0.5)
+                top_pos = prs.slide_height - icon_height - Cm(0.5)
+                
+                # Custom Audio Icon Path - Use absolute path for reliability
+                backend_dir = Path("d:/Works/PPT_Presentation_Script/backend")
+                asset_path = backend_dir / "assets" / "audio_icon.png"
+                poster_frame = str(asset_path) if asset_path.exists() else None
+                print(f"DEBUG PPT: Using audio icon at: {asset_path} (Exists: {asset_path.exists()}) | Size: 0.5cm")
+
+                # Insert Audio Shape
+                movie = slide.shapes.add_movie(
+                    audio_path, 
+                    left=left_pos, top=top_pos, 
+                    width=icon_width, height=icon_height, 
+                    poster_frame_image=poster_frame, 
+                    mime_type='audio/mp3'
+                )
+                
+                # --- AUTO-PLAY XML INJECTION ---
+                try:
+                    shape_id = movie.shape_id
+                    self._add_autoplay_timing(slide, shape_id)
+        
+        for i, slide in enumerate(prs.slides):
+            # Skip hidden slides
+            if slide.element.get('show') == '0' or slide.element.get('show') == 'false':
+                continue
+            
+            visible_slide_index += 1
+            
+            if progress_callback:
+                progress_callback(int((visible_slide_index / total_slides) * 80), f"Processing slide {visible_slide_index}/{total_slides}...")
+
+            slide_data = script_data_map.get(visible_slide_index)
+            
+            if not slide_data:
+                print(f"DEBUG PPT: Slide {i+1} (Visible {visible_slide_index}) - No script data found.")
+                continue
+            
+            script_text = slide_data.get('script', '')
+            segments = slide_data.get('segments', [])
+            
+            # Collect script for notes
+            all_slide_scripts[i + 1] = script_text
+            
+            # Skip if no content to narrate
+            if not script_text and not segments:
+                print(f"DEBUG PPT: Slide {i+1} - No script or segments, skipping narration")
+                continue
+            
+            try:
+                import re
+                
+                print(f"DEBUG PPT: Slide {i+1} - script length: {len(script_text)}")
+                
+                # Generate audio for the whole script (simplified - no segmentation)
+                clean_text = re.sub(r'[*()[\]/]', ' ', script_text)
+                
+                if not clean_text.strip():
+                    print(f"DEBUG PPT: Slide {i+1} - Empty clean text, skipping narration")
+                    continue
+                
+                audio_info = await self.generate_audio(clean_text, voice, rate, pitch)
+                audio_path = audio_info['path']
+                print(f"DEBUG PPT: Audio generated: {audio_path}")
+                
+                from mutagen.mp3 import MP3
+                audio = MP3(audio_path)
+                duration_sec = audio.info.length
+                
+                # Position & Size (50% reduction per user request)
+                from pptx.util import Cm
+                icon_width = Cm(0.5)
+                icon_height = Cm(0.5)
+                left_pos = Cm(0.5)
+                top_pos = prs.slide_height - icon_height - Cm(0.5)
+                
+                # Custom Audio Icon Path
+                backend_dir = Path("d:/Works/PPT_Presentation_Script/backend")
+                asset_path = backend_dir / "assets" / "audio_icon.png"
+                poster_frame = str(asset_path) if asset_path.exists() else None
+                print(f"DEBUG PPT: Using audio icon at: {asset_path} (Exists: {asset_path.exists()})")
+
+                # Insert Audio Shape
+                movie = slide.shapes.add_movie(
+                    audio_path, 
+                    left=left_pos, top=top_pos, 
+                    width=icon_width, height=icon_height, 
+                    poster_frame_image=poster_frame, 
+                    mime_type='audio/mp3'
+                )
+                
+                # Set auto-play via XML
+                try:
+                    shape_id = movie.shape_id
+                    self._add_autoplay_timing(slide, shape_id)
+                except Exception as xml_err:
+                    print(f"Warning: Could not set auto-play for slide {i+1}: {xml_err}")
+                
+                # Set Transition: Advance after audio duration + buffer
+                if hasattr(slide, 'slide_show_transition'):
+                    trans = slide.slide_show_transition
+                    trans.advance_on_time = True
+                    trans.advance_after_time = int((duration_sec + 2.0) * 1000)
+            
+            except Exception as e:
+                print(f"Failed to process slide {i+1}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # Save with audio
+        prs.save(output_path)
+        print(f"DEBUG PPT: Saved PPT with audio to {output_path}")
+        
+        # Now use COM to add notes to all slides
+        if progress_callback:
+            progress_callback(90, "Synchronizing slide notes...")
+        
+        try:
+            self._sync_notes_via_com(str(output_path.resolve()), all_slide_scripts)
+        except Exception as com_err:
+            print(f"Warning: COM notes sync failed: {com_err}")
+            import traceback
+            traceback.print_exc()
+        
+        return {
+            "filename": output_filename,
+            "path": str(output_path),
+            "url_path": f"/outputs/{output_filename}"
+        }
+
+    def _sync_notes_via_com(self, pptx_path: str, slide_scripts: Dict[int, str]):
+        """
+        Use PowerPoint COM to synchronize slide notes.
+        Simplified version - only updates notes, no animations.
+        """
+        try:
+            import win32com.client
+            import pythoncom
+            
+            print(f"DEBUG COM: Starting notes synchronization for {pptx_path}")
+            pythoncom.CoInitialize()
+            
+            ppt_app = win32com.client.DispatchEx("PowerPoint.Application")
+            ppt_app.Visible = False  # Run in background
+            
+            abs_path = os.path.abspath(pptx_path)
+            print(f"DEBUG COM: Opening {abs_path}")
+            presentation = ppt_app.Presentations.Open(abs_path, WithWindow=False)
+            
+            for slide_no, script_text in slide_scripts.items():
+                if not script_text:
+                    continue
+                
+                try:
+                    slide = presentation.Slides(slide_no)
+                    notes_page = slide.NotesPage
+                    
+                    # Find notes placeholder
+                    placeholder = None
+                    try:
+                        placeholder = notes_page.Shapes.Placeholders(2)
+                    except:
+                        # Fallback: find any text shape
+                        for shp in notes_page.Shapes:
+                            try:
+                                if hasattr(shp, "TextFrame"):
+                                    placeholder = shp
+                                    break
+                            except:
+                                continue
+                    
+                    if placeholder:
+                        placeholder.TextFrame.TextRange.Text = script_text
+                        print(f"DEBUG COM: Notes synchronized for slide {slide_no} ({len(script_text)} chars)")
+                    else:
+                        print(f"Warning COM: No notes placeholder found for slide {slide_no}")
+                
+                except Exception as e:
+                    print(f"Warning COM: Failed to sync notes for slide {slide_no}: {e}")
+            
+            # Save and close
+            presentation.Save()
+            presentation.Close()
+            ppt_app.Quit()
+            print(f"DEBUG COM: Notes synchronization complete")
+            
+        except ImportError:
+            print("Warning: pywin32 not installed, skipping COM notes sync")
+        except Exception as e:
+            print(f"Warning: COM notes sync failed: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                presentation.Close()
+            except: pass
+            try:
+                ppt_app.Quit()
+            except: pass
+        finally:
+            try:
+                import pythoncom
+                pythoncom.CoUninitialize()
+            except:
+                pass
+
+    def _ensure_notes_text(self, slide, text: str):
+        """
+        Force-create a notes textbox via oxml when the template lacks notes placeholders.
+        This avoids relying on notes_slide.shapes.add_textbox (not supported).
+        """
+        from pptx.oxml import parse_xml
+        from pptx.oxml.ns import qn
+
+        if not text:
+            return
+
+        notes_slide = slide.notes_slide if slide.has_notes_slide else None
+        if notes_slide is None and hasattr(slide.part, "_add_notes_slide_part"):
+            notes_part = slide.part._add_notes_slide_part()
+            notes_slide = notes_part.notes_slide
+        if notes_slide is None:
+            print(f"DEBUG PPT: Unable to create notes slide for slide {getattr(slide, 'slide_id', 'unknown')}")
+            return
+
+        # Try native text_frame first
+        tf = getattr(notes_slide, "notes_text_frame", None)
+        if tf:
+            tf.text = text
+            return
+
+        # Fallback: inject a textbox shape via XML
+        try:
+            spTree = notes_slide._element.cSld.spTree
+            max_id = 1
+            for sp in spTree.findall(qn('p:sp')):
+                nvSpPr = sp.find(qn('p:nvSpPr'))
+                if nvSpPr is None:
+                    continue
+                cNvPr = nvSpPr.find(qn('p:cNvPr'))
+                if cNvPr is None:
+                    continue
+                try:
+                    max_id = max(max_id, int(cNvPr.get('id')))
+                except Exception:
+                    continue
+            new_id = max_id + 1
+            safe_text = html.escape(text)
+            xml = f'''
+            <p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+              <p:nvSpPr>
+                <p:cNvPr id="{new_id}" name="Notes TextBox"/>
+                <p:cNvSpPr/>
+                <p:nvPr/>
+              </p:nvSpPr>
+              <p:spPr/>
+              <p:txBody>
+                <a:bodyPr/>
+                <a:lstStyle/>
+                <a:p><a:r><a:rPr lang="zh-TW"/><a:t>{safe_text}</a:t></a:r></a:p>
+              </p:txBody>
+            </p:sp>
+            '''
+            new_sp = parse_xml(xml)
+            spTree.append(new_sp)
+            print(f"DEBUG PPT: Injected notes textbox for slide.")
+        except Exception as e:
+            print(f"DEBUG PPT: XML notes injection failed: {e}")
+
+    def _add_autoplay_timing(self, slide, shape_id):
+        """
+        Injects the complex XML required to make a media shape play automatically.
+        """
+        from pptx.oxml import parse_xml
+        from pptx.oxml.ns import qn
+        
+        # Get or create the timing element
+        # <p:timing> is a child of <p:sld>
+        # Schema order: cSld, clrMapOvr, transition, timing, extLst
+        timing = slide.element.find(qn('p:timing'))
+        if timing is None:
+            timing = parse_xml('<p:timing xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>')
+            
+            # Robust insertion point: Before extLst if it exists, otherwise append.
+            # This works because timing is the 2nd to last allowed element.
+            extLst = slide.element.find(qn('p:extLst'))
+            if extLst is not None:
+                slide.element.insert(slide.element.index(extLst), timing)
+            else:
+                slide.element.append(timing)
+            
+        # Structure we need:
+        # <p:tnLst>
+        #   <p:par>
+        #     <p:cTn ...>
+        #       <p:stCondLst> ... <p:cond delay="0"/> ... </p:stCondLst>
+        #       <p:childTnLst>
+        #         <p:seq ...> 
+        #           <p:cTn ...>
+        #             <p:childTnLst>
+        #               <p:par>
+        #                 <p:cTn ... presetID="1" ...>  <-- The Click Effect (but triggered auto because of parent)
+        #                   ... <p:cmd type="call" cmd="playFrom(0.0)"> ... <p:tgtEl><p:spTgt spid="[ID]"/> ...
+        
+        # Simplified approach: Create a complete timing block for this shape
+        # Note: If other animations exist, this might overwrite or append. We append.
+        
+        # We need to ensure the basic structure exists
+        tnLst = timing.find(qn('p:tnLst'))
+        if tnLst is None:
+            tnLst = parse_xml('<p:tnLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>')
+            timing.append(tnLst)
+            
+        # If there's no existing parallel time node, create the root
+        # But constructing the whole tree is hard.
+        # Let's try to append a simplified "par" that triggers the shape.
+        
+        # Actually, standard auto-play is often just a specific <p:cTn> configuration.
+        # Since this is a "hack", we will try a standard block that works for "Start: With Previous" (Auto)
+        
+        # XML Snippet for Media Play
+        xml = f"""
+        <p:par xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">
+            <p:childTnLst>
+              <p:seq concurrent="1" nextAc="seek">
+                <p:cTn id="2" dur="indefinite" nodeType="mainSeq">
+                  <p:childTnLst>
+                    <p:par>
+                      <p:cTn id="3" fill="hold">
+                        <p:stCondLst>
+                          <p:cond delay="0"/>
+                        </p:stCondLst>
+                        <p:childTnLst>
+                          <p:par>
+                            <p:cTn id="4" presetID="1" presetClass="mediacall" presetSubtype="0" fill="hold" nodeType="clickEffect">
+                              <p:stCondLst>
+                                <p:cond delay="0"/>
+                              </p:stCondLst>
+                              <p:childTnLst>
+                                <p:cmd type="call" cmd="playFrom(0.0)">
+                                  <p:cBhvr>
+                                    <p:cTn id="5" dur="indefinite" fill="hold"/>
+                                    <p:tgtEl>
+                                      <p:spTgt spid="{shape_id}"/>
+                                    </p:tgtEl>
+                                  </p:cBhvr>
+                                </p:cmd>
+                              </p:childTnLst>
+                            </p:cTn>
+                          </p:par>
+                        </p:childTnLst>
+                      </p:cTn>
+                    </p:par>
+                  </p:childTnLst>
+                </p:cTn>
+              </p:seq>
+            </p:childTnLst>
+          </p:cTn>
+        </p:par>
+        """
+        # This overwrites existing timing. Be careful if slide has other animations.
+        # For this use case (Script to PPT), slides are likely static text, so overwriting is safer than appending invalidly.
+        
+        # Clear existing children of tnLst
+        for child in list(tnLst):
+            tnLst.remove(child)
+            
+        # Parse and append our new block
+        new_node = parse_xml(xml)
+        tnLst.append(new_node)
+
+    def _apply_animations_via_com(self, pptx_path: str, slide_timings: Dict[int, Dict]):
+        """
+        Use PowerPoint COM automation to add fade-in animations with timing.
+        Applies animations to text shapes sequentially based on segment timings.
+        """
+        try:
+            import win32com.client
+            import pythoncom
+            
+            print(f"DEBUG COM: Starting animation application for {pptx_path}")
+            print(f"DEBUG COM: Slide timings count: {len(slide_timings)}")
+            if not slide_timings:
+                print("DEBUG COM: No timings provided, skipping.")
+                return
+
+            pythoncom.CoInitialize()
+            
+            print(f"DEBUG COM: Opening PowerPoint for animation setup...")
+            # Use DispatchEx to ensure a fresh, separate instance in background threads
+            ppt_app = win32com.client.DispatchEx("PowerPoint.Application")
+            ppt_app.Visible = True  # Must be visible to manipulate animations
+            
+            # Use absolute path for COM
+            abs_path = os.path.abspath(pptx_path)
+            print(f"DEBUG COM: Opening absolute path: {abs_path}")
+            presentation = ppt_app.Presentations.Open(abs_path, WithWindow=True)
+            
+            for slide_no, payload in slide_timings.items():
+                if isinstance(payload, dict):
+                    timings = payload.get("timings") or []
+                    script_text = payload.get("script", "")
+                else:
+                    timings = payload or []
+                    script_text = ""
+
+                if slide_no == 1:
+                    # Still sync notes for first slide even though we skip animations
+                    if script_text:
+                        try:
+                            slide = presentation.Slides(slide_no)
+                            notes_page = slide.NotesPage
+                            placeholder = None
+                            try:
+                                placeholder = notes_page.Shapes.Placeholders(2)
+                            except:
+                                for shp in notes_page.Shapes:
+                                    try:
+                                        if hasattr(shp, "TextFrame"):
+                                            placeholder = shp
+                                            break
+                                    except:
+                                        continue
+                            if placeholder:
+                                placeholder.TextFrame.TextRange.Text = script_text
+                                print(f"DEBUG COM: Notes synchronized for slide 1 (no animations)")
+                        except Exception as e:
+                            print(f"Warning COM: Failed to sync notes for slide 1: {e}")
+                    continue
+
+                # Sync notes even if no timings (slide may have script but no narration)
+                if not timings and script_text:
+                    try:
+                        slide = presentation.Slides(slide_no)
+                        notes_page = slide.NotesPage
+                        placeholder = None
+                        try:
+                            placeholder = notes_page.Shapes.Placeholders(2)
+                        except:
+                            for shp in notes_page.Shapes:
+                                try:
+                                    if hasattr(shp, "TextFrame"):
+                                        placeholder = shp
+                                        break
+                                except:
+                                    continue
+                        if placeholder:
+                            placeholder.TextFrame.TextRange.Text = script_text
+                            print(f"DEBUG COM: Notes synchronized for slide {slide_no} (no timings)")
+                    except Exception as e:
+                        print(f"Warning COM: Failed to sync notes for slide {slide_no}: {e}")
+                    continue
+                elif not timings:
+                    print(f"DEBUG COM: Slide {slide_no} - No timings or script, skipping.")
+                    continue
+
+                try:
+                    # Log Time-coded Script for verification
+                    print(f"\n--- TIME-CODED SCRIPT (Slide {slide_no}) ---")
+                    for t in timings:
+                        start = t.get('start_time', 0.0)
+                        dur = t.get('duration', 0.0)
+                        t_type = t.get('type', 'unknown')
+                        text = t.get('text', '')[:40].replace('\n', ' ')
+                        print(f"  [{start:05.2f}s - {start+dur:05.2f}s] ({t_type}) {text}...")
+                    print("-" * 40 + "\n")
+
+                    slide = presentation.Slides(slide_no)
+
+                    # *** CRITICAL FIX: Force update notes regardless of existing content ***
+                    # Previous logic only filled if empty, causing sync issues
+                    try:
+                        notes_page = slide.NotesPage
+                        placeholder = None
+                        
+                        # Try placeholder 2 (Notes Body) first
+                        try:
+                            placeholder = notes_page.Shapes.Placeholders(2)
+                        except Exception:
+                            # Fallback: find any text-capable shape
+                            for shp in notes_page.Shapes:
+                                try:
+                                    if hasattr(shp, "TextFrame"):
+                                        placeholder = shp
+                                        break
+                                except Exception:
+                                    continue
+                        
+                        if placeholder and script_text:
+                            # ALWAYS update - don't check if empty
+                            placeholder.TextFrame.TextRange.Text = script_text
+                            print(f"DEBUG COM: Notes synchronized for slide {slide_no} ({len(script_text)} chars)")
+                        elif not placeholder:
+                            print(f"Warning COM: No notes placeholder found for slide {slide_no}")
+                    except Exception as note_err:
+                        print(f"Warning COM: Notes sync failed for slide {slide_no}: {note_err}")
+                    timeline = slide.TimeLine
+                    main_sequence = timeline.MainSequence
+                    
+                    # Clear existing manual animations to avoid conflicts
+                    while main_sequence.Count > 0:
+                        main_sequence.Item(1).Delete()
+                        
+                    slide_height = presentation.PageSetup.SlideHeight
+                    
+                    # 1. Identify valid text shapes (including those inside groups)
+                    def collect_text_shapes(shape_collection):
+                        found = []
+                        for shp in shape_collection:
+                            try:
+                                if shp.Type == 6: # msoGroup
+                                    found.extend(collect_text_shapes(shp.GroupItems))
+                                elif hasattr(shp, 'HasTextFrame') and shp.HasTextFrame and shp.TextFrame.HasText:
+                                    if shp.Width > 20 and shp.Height > 10:
+                                        found.append(shp)
+                            except: continue
+                        return found
+
+                    all_text_shp = collect_text_shapes(slide.Shapes)
+                    
+                    title_shapes = []
+                    content_shapes = []
+                    for shp in all_text_shp:
+                        # Top 16% is likely a slide title
+                        if shp.Top < (slide_height * 0.16):
+                            title_shapes.append(shp)
+                        else:
+                            content_shapes.append(shp)
+
+                    # Titles do NOT animate (skipped per user request)
+                    for shp in title_shapes:
+                        print(f"DEBUG COM: Title '{shp.Name}' - Static")
+
+                    # 2. Sequential Animation for Content (Semantic Mapping)
+                    # 🛡️ Safety-First Mapping: Prioritize Visibility over Complexity
+                    # Logic: Only animate shapes that STRONGLY match the script. Everything else stays visible.
+                    
+                    content_timings = [t for t in timings if t.get('type') in ('bullet', 'content', 'transition')]
+                    content_timings.sort(key=lambda x: x.get('start_time', 0))
+                    
+                    if not content_timings:
+                        print(f"DEBUG COM: Slide {slide_no} - No timings found to animate.")
+                        continue
+
+                    # Pre-clean text for matching
+                    def clean_it(t): return "".join(filter(str.isalnum, (t or "").lower()))
+                    
+                    # 1. Prepare Shape Data
+                    animatable_candidates = []
+                    for s in content_shapes:
+                        try:
+                            txt = s.TextFrame.TextRange.Text.strip()
+                            if not txt: continue
+                            animatable_candidates.append({
+                                'shape': s, 
+                                'clean': clean_it(txt), 
+                                'full': txt.lower(),
+                                'matched_seg_idx': -1,
+                                'best_score': 0
+                            })
+                        except: continue
+
+                    # 2. Global "Best Match" Pass
+                    # Each segment finds its best shape candidate
+                    for seg_idx, seg in enumerate(content_timings):
+                        seg_clean = clean_it(seg.get('text', ''))
+                        if not seg_clean: continue
+                        
+                        best_s_idx = -1
+                        max_s = 0
+                        for i, cand in enumerate(animatable_candidates):
+                            score = 0
+                            # Core Keyword Overlap
+                            if seg_clean in cand['clean'] or cand['clean'] in seg_clean:
+                                score += 200
+                            # Character Overlap Ratio
+                            s1, s2 = set(seg_clean), set(cand['clean'])
+                            if s1: score += (len(s1 & s2) / len(s1)) * 100
+                            
+                            if score > max_s:
+                                max_s = score
+                                best_s_idx = i
+                        
+                        # Assign if confidence is high (> 100 means at least decent overlap)
+                        if best_s_idx != -1 and max_s > 100:
+                            # If this shape was already matched, only update if this score is better
+                            if animatable_candidates[best_s_idx]['best_score'] < max_s:
+                                animatable_candidates[best_s_idx]['best_score'] = max_s
+                                animatable_candidates[best_s_idx]['matched_seg_idx'] = seg_idx
+                                print(f"DEBUG COM: Match Found! Seg[{seg_idx}] -> Shape[{best_s_idx}] (Score: {max_s:.0f})")
+                        else:
+                            print(f"DEBUG COM: No confident match for Seg[{seg_idx}] '{seg.get('text','')[:15]}...' (Best Score: {max_s:.0f})")
+
+                    # 3. Apply Animations ONLY to Matched Shapes (Others stay VISIBLE/STATIC)
+                    APPEAR_OFFSET = 0.5 # Slightly more anticipation
+                    
+                    for cand_idx, item in enumerate(animatable_candidates):
+                        shp = item['shape']
+                        seg_idx = item['matched_seg_idx']
+                        
+                        # ✨ SAFETY: If no match, leave it static (Visible from start)
+                        if seg_idx == -1:
+                            print(f"DEBUG COM: Shape[{cand_idx}] '{item['full'][:15]}...' - Keeping STATIC")
+                            continue
+                            
+                        try:
+                            current_content = content_timings[seg_idx]
+                            
+                            # Find Appearance Trigger (Look back for Transition)
+                            master_idx = timings.index(current_content)
+                            appear_time = current_content.get('start_time', 0.0) - APPEAR_OFFSET
+                            for lb in range(1, 5):
+                                if master_idx - lb >= 0:
+                                    prev = timings[master_idx - lb]
+                                    if prev.get('type') == 'transition':
+                                        appear_time = prev.get('start_time', 0.0)
+                                        break
+                                        
+                            # --- GLOW / HIGHLIGHT ONLY ---
+                            # Entry animations removed per user request: "不需要其他動態效果"
+                            # All text will be visible from the start.
+                            
+                            # B. Highlight sequences for ALL segments mapping to this shape
+                            # We search for any other segments that might map to this same shape
+                            for sid, seg_obj in enumerate(content_timings):
+                                # Recalculate match for this specific segment to see if it belongs to this shape
+                                sc_clean = clean_it(seg_obj.get('text', ''))
+                                if sc_clean and (sc_clean in item['clean'] or item['clean'] in sc_clean):
+                                    start_time = seg_obj.get('start_time', 0.0)
+                                    eff_h = main_sequence.AddEffect(shp, 46, 0, 1) # Color Emphasis
+                                    
+                                    # Para Match
+                                    try:
+                                        paras = shp.TextFrame.TextRange.Paragraphs()
+                                        num_p = paras.Count
+                                        if num_p > 1:
+                                            p_best, p_max = 1, 0
+                                            for pi in range(1, num_p + 1):
+                                                pc = clean_it(paras.Item(pi).Text)
+                                                pscore = 0
+                                                if pc and (pc in sc_clean or sc_clean in pc): pscore += 100
+                                                if pscore > p_max: p_max, p_best = pscore, pi
+                                            eff_h.Paragraph = p_best
+                                    except: pass
+                                    
+                                    eff_h.Timing.TriggerDelayTime = start_time
+                                    eff_h.Timing.Duration = 0.8 # Slightly slower glow for better visibility
+                                    # Use a vibrant Orange-Gold for the glow/highlight effect
+                                    eff_h.EffectParameters.Color2.RGB = 0x00A5FF # Bright Gold/Orange BGR
+                                    print(f"DEBUG COM: Glow Effect for '{item['full'][:10]}' at {start_time:.2f}s")
+
+                        except Exception as e:
+                            print(f"Warning COM: Animation safe-fail Slide {slide_no}: {e}")
+
+                            
+                except Exception as slide_err:
+                    print(f"Warning COM: Could not process slide {slide_no}: {slide_err}")
+                    continue
+            
+            # Save and close
+            presentation.Save()
+            presentation.Close()
+            ppt_app.Quit()
+            print(f"DEBUG COM: Animation setup complete")
+            
+        except ImportError:
+            print("Warning: pywin32 not installed, skipping COM animations")
+        except Exception as e:
+            print(f"Warning: COM animation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to clean up
+            try:
+                presentation.Close()
+            except: pass
+            try:
+                ppt_app.Quit()
+            except: pass
+        finally:
+            try:
+                import pythoncom
+                pythoncom.CoUninitialize()
+                print("DEBUG COM: COM uninitialized.")
+            except:
+                pass
