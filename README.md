@@ -17,14 +17,6 @@
 - 🔧 **模組化架構**：清晰的程式碼結構，易於維護和擴展
 - 🌍 **多語言支援**：支援繁體中文、簡體中文、英文、日文、越南文等
 
-<div align="center">
-
-![Language Selector](docs/screenshots/language-selector.png)
-
-*多語言介面切換*
-
-</div>
-
 ## 📊 系統架構
 
 ```mermaid
@@ -129,15 +121,6 @@ pip install -r requirements.txt
 # 設置環境變數
 cp .env.example .env
 # 編輯 .env 填入您的 GEMINI_API_KEY
-```
-
-<div align="center">
-
-![Gemini API Settings](docs/screenshots/gemini-settings.png)
-
-*在設定面板中配置 Google Gemini API 金鑰*
-
-</div>
 
 ```bash
 # 啟動後端服務
@@ -238,14 +221,6 @@ npm run dev
    - 語速：-50% 至 +100%
    - 音調：-50Hz 至 +50Hz
 
-<div align="center">
-
-![TTS Settings](docs/screenshots/tts-settings.png)
-
-*TTS 語音設定面板*
-
-</div>
-
 3. **生成和下載**
    - 點擊「生成有聲 PPT」
    - 系統會自動：
@@ -254,6 +229,66 @@ npm run dev
      - 📋 同步備忘稿
      - ⏱️ 設定自動播放
    - 下載完成的有聲 PPT
+
+---
+
+## ⚙️ 相關設定
+
+### Google Gemini API 設定
+
+在設定面板中配置您的 Google Gemini API 金鑰：
+
+<div align="center">
+
+![Gemini API Settings](docs/screenshots/gemini-settings.png)
+
+</div>
+
+**配置步驟：**
+1. 點擊設定選單中的「Google Gemini」
+2. 輸入您的 API 金鑰
+3. 選擇模型（預設：gemini-flash-latest）
+4. 點擊「儲存」完成配置
+
+> 🔑 **取得 API 金鑰**：前往 [Google AI Studio](https://aistudio.google.com/app/apikey) 建立免費 API 金鑰
+
+---
+
+### TTS 語音設定
+
+調整文字轉語音的參數：
+
+<div align="center">
+
+![TTS Settings](docs/screenshots/tts-settings.png)
+
+</div>
+
+**可調整項目：**
+- **語音語言**：選擇輸出語言（中文、英文等）
+- **語音模型**：選擇不同的語音角色（男聲、女聲）
+- **語速**：調整說話速度（-50% 至 +100%）
+- **音調**：調整聲音高低（-50Hz 至 +50Hz）
+
+---
+
+### 語言切換
+
+系統支援多種介面語言：
+
+<div align="center">
+
+![Language Selector](docs/screenshots/language-selector.png)
+
+</div>
+
+**支援語言：**
+- 🇹🇼 繁體中文 (Traditional Chinese)
+- 🇺🇸 英文 (English)
+- 🇯🇵 日文 (Japanese)
+- 🇻🇳 越南文 (Tiếng Việt)
+
+點擊右上角的地球圖示即可切換介面語言。
 
 4. **使用結果**
    - 切換查看完整文稿或分段內容
