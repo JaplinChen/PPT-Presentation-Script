@@ -111,10 +111,6 @@ const TTSConfig = ({ onConfigChange }) => {
                         <option value="en">English (英文)</option>
                         <option value="ja">Japanese (日文)</option>
                         <option value="vi">Vietnamese (越南文)</option>
-                        {/* Fallback for others */}
-                        {availableLanguages.filter(l => !['zh', 'en', 'ja', 'vi'].includes(l)).map(l => (
-                            <option key={l} value={l}>{l.toUpperCase()}</option>
-                        ))}
                     </select>
                 </div>
 
