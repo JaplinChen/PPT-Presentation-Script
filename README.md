@@ -20,14 +20,14 @@
 
 ```mermaid
 graph TB
-    subgraph Frontend["前端層 (React + Vite)"]
+    subgraph Frontend[Frontend - React + Vite]
         UI[使用者介面]
         Upload[檔案上傳]
         Editor[文稿編輯器]
         TTS[TTS 控制面板]
     end
     
-    subgraph Backend["後端層 (FastAPI)"]
+    subgraph Backend[Backend - FastAPI]
         API[API 端點]
         PPTParser[PPT 解析器]
         ScriptGen[文稿生成器]
@@ -35,7 +35,7 @@ graph TB
         NotesSync[備忘稿同步]
     end
     
-    subgraph External["外部服務"]
+    subgraph External[External Services]
         Gemini[Google Gemini AI]
         EdgeTTS[Microsoft Edge TTS]
         PowerPoint[PowerPoint COM]
