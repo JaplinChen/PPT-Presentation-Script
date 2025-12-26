@@ -15,6 +15,15 @@
 - 💾 **便捷導出**：一鍵複製或下載 TXT 格式
 - 🎨 **精美介面**：現代化 UI 設計，支援響應式布局
 - 🔧 **模組化架構**：清晰的程式碼結構，易於維護和擴展
+- 🌍 **多語言支援**：支援繁體中文、簡體中文、英文、日文、越南文等
+
+<div align="center">
+
+![Language Selector](docs/screenshots/language-selector.png)
+
+*多語言介面切換*
+
+</div>
 
 ## 📊 系統架構
 
@@ -120,7 +129,17 @@ pip install -r requirements.txt
 # 設置環境變數
 cp .env.example .env
 # 編輯 .env 填入您的 GEMINI_API_KEY
+```
 
+<div align="center">
+
+![Gemini API Settings](docs/screenshots/gemini-settings.png)
+
+*在設定面板中配置 Google Gemini API 金鑰*
+
+</div>
+
+```bash
 # 啟動後端服務
 python -m uvicorn app.main:app --reload --port 8000
 ```
@@ -142,25 +161,99 @@ npm run dev
 
 前端將運行在 `http://localhost:5173`
 
-## 📖 使用說明
+## 📚 使用說明
 
 ### 基本流程
 
-1. **上傳 PPT**
-   - 拖放或選擇 .ppt/.pptx 檔案
-   - 系統自動解析投影片內容
+#### 1️⃣ 上傳 PPT
 
-2. **設定參數**
-   - 聽眾對象（例如：高階主管、內部團隊）
-   - 簡報目的（例如：產品介紹、進度報告）
-   - 簡報情境（正式會議、內部分享等）
-   - 語氣風格（專業自然、輕鬆友善等）
-   - 預計時長
+點擊「選擇檔案」或拖放 .ppt/.pptx 檔案到上傳區域
 
-3. **生成文稿**
-   - AI 自動生成開場白和逐頁講稿
-   - 可選擇包含轉場語
-   - 即時預覽生成結果
+<div align="center">
+
+![Step 1 - Upload PPT](docs/screenshots/step1-upload.png)
+
+</div>
+
+系統會自動解析投影片內容，顯示投影片資訊和縮圖
+
+<div align="center">
+
+![Step 1 - PPT Uploaded](docs/screenshots/step1-uploaded.png)
+
+</div>
+
+---
+
+#### 2️⃣ 設定參數
+
+在右側「文稿設定」面板中配置生成參數：
+
+- **聽眾對象**：例如：高階主管、客戶代表、內部團隊
+- **簡報目的**：例如：產品介紹、進度報告、技術分享
+- **簡報情境**：正式會議、內部分享、客戶簡報
+- **語氣風格**：專業自然、輕鬆友善、熱情濃烈
+- **預計時長**：設定演講的目標時間（分鐘）
+- **輸出語言**：繁體中文、簡體中文、英文等
+
+<div align="center">
+
+![Step 2 - Configure Settings](docs/screenshots/step2-config.png)
+
+</div>
+
+---
+
+#### 3️⃣ 生成文稿
+
+點擊「生成文稿」按鈕，AI 會自動生成：
+
+- 🎯 **開場白**：吸引聽眾注意力的開場
+- 📝 **逐頁講稿**：每張投影片的詳細說明
+- 🔗 **轉場語**：投影片間的自然連接（可選）
+
+生成後可以：
+- ✅ 即時預覽生成結果
+- ✏️ 手動編輯和調整內容
+- 📋 一鍵複製到剪貼簿
+- 💾 下載為 TXT 檔案
+
+<div align="center">
+
+![Step 3 - Generated Script](docs/screenshots/step3-result.png)
+
+</div>
+
+---
+
+#### 4️⃣ 生成有聲 PPT（選用）
+
+如果需要生成帶有音訊旁白的 PPT：
+
+1. **選擇 TTS 語音**
+   - 支援多種中文、英文語音
+   - 可預覽語音效果
+
+2. **調整音訊參數**
+   - 語速：-50% 至 +100%
+   - 音調：-50Hz 至 +50Hz
+
+<div align="center">
+
+![TTS Settings](docs/screenshots/tts-settings.png)
+
+*TTS 語音設定面板*
+
+</div>
+
+3. **生成和下載**
+   - 點擊「生成有聲 PPT」
+   - 系統會自動：
+     - 🎙️ 生成 TTS 音訊
+     - 🔗 嵌入音訊到 PPT
+     - 📋 同步備忘稿
+     - ⏱️ 設定自動播放
+   - 下載完成的有聲 PPT
 
 4. **使用結果**
    - 切換查看完整文稿或分段內容
